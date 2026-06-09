@@ -2,10 +2,6 @@ name: Fork release
 on:
   workflow_dispatch:
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
-
 permissions:
   contents: write
   packages: write
@@ -15,6 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.suffix.outputs.tag }}
+      image: ${{ steps.suffix.outputs.image }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -26,7 +23,10 @@ jobs:
         id: suffix
         run: |
           SHA=$(git rev-parse --short HEAD)
-          echo "tag=fnx-${SHA}" >> $GITHUB_OUTPUT
+          TAG="fnx-${SHA}"
+          IMAGE=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "image=${IMAGE}" >> $GITHUB_OUTPUT
 
       - name: Create and push tag
         run: |
@@ -57,7 +57,7 @@ jobs:
       - name: Log in to the container registry
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -67,7 +67,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.tag.outputs.tag }}
+          tags: ${{ needs.tag.outputs.image }}:${{ needs.tag.outputs.tag }}
           platforms: linux/amd64,linux/arm64
           provenance: false
           sbom: false
@@ -82,7 +82,6 @@ jobs:
 
       - name: Publish Helm chart
         run: |
-          GHCR_REPO=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
           HELM_REPO=$(echo "oci://ghcr.io/${{ github.repository_owner }}/helm-charts" | tr '[:upper:]' '[:lower:]')
           cd helm
           helm registry login -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }} ghcr.io
