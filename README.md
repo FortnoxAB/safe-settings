@@ -9,7 +9,7 @@
 
 `Safe-settings` – an app to manage policy-as-code and apply repository settings across an organization.
 
-1. In `safe-settings`, all the settings are stored centrally in an `admin` repo within the organization. Unlike the [GitHub Repository Settings App](https://github.com/repository-settings/app), the settings files cannot be in individual repositories.
+1. In `safe-settings`, all the settings are stored centrally insfeef an `admin` repo within the organization. Unlike the [GitHub Repository Settings App](https://github.com/repository-settings/app), the settings files cannot be in individual repositories.
 
    > It is possible specify a custom repo instead of the `admin` repo with `ADMIN_REPO`. See [Environment variables](#environment-variables) for more details.
 
