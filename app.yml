@@ -18,6 +18,7 @@ default_events:
   - check_suite
   - create
   - custom_property_values
+  - issue_comment
   - member
   - pull_request
   - push

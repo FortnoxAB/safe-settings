@@ -462,4 +462,141 @@ repository:
       );
     });
   });
+
+  describe('handleResults - PR comment', () => {
+    let settings
+
+    function changeResult (repo) {
+      return {
+        type: 'INFO',
+        plugin: 'Repository',
+        repo,
+        action: { additions: {}, deletions: {}, modifications: { name: repo } }
+      }
+    }
+
+    beforeEach(() => {
+      stubContext.payload.check_run = {
+        id: 1,
+        html_url: 'https://github.com/test/test-repo/runs/1',
+        check_suite: { pull_requests: [{ number: 42 }] }
+      }
+      stubContext.payload.repository = { owner: { login: 'test' }, name: 'test-repo' }
+
+      stubContext.octokit.rest.issues = {
+        listComments: jest.fn(),
+        createComment: jest.fn().mockResolvedValue({})
+      }
+      stubContext.octokit.rest.checks = {
+        update: jest.fn().mockResolvedValue({})
+      }
+      stubContext.octokit.graphql = jest.fn().mockResolvedValue({})
+      stubContext.octokit.paginate = jest.fn().mockResolvedValue([])
+
+      settings = createSettings({})
+      settings.nop = true
+    })
+
+    it('creates a new comment with the heading, summary line, check-run link and checkbox when none exists', async () => {
+      settings.results = [changeResult('test-repo')]
+
+      await settings.handleResults()
+
+      expect(stubContext.octokit.graphql).not.toHaveBeenCalled()
+      expect(stubContext.octokit.rest.issues.createComment).toHaveBeenCalledTimes(1)
+      const body = stubContext.octokit.rest.issues.createComment.mock.calls[0][0].body
+      expect(body).toContain('#### :robot: Safe-Settings config changes detected:')
+      expect(body).toContain('**Plugins affected:** Repository')
+      expect(body).toContain('https://github.com/test/test-repo/runs/1')
+      expect(body).toContain('- [ ] I have reviewed the changes and verified that they are intended.')
+    })
+
+    it('minimizes the most recent matching comment and creates a fresh one', async () => {
+      stubContext.octokit.paginate.mockResolvedValue([
+        { id: 100, node_id: 'node-100', body: 'unrelated comment' },
+        { id: 200, node_id: 'node-200', body: '#### :robot: Safe-Settings config changes detected:\nold diff' }
+      ])
+      settings.results = [changeResult('test-repo')]
+
+      await settings.handleResults()
+
+      expect(stubContext.octokit.graphql).toHaveBeenCalledTimes(1)
+      expect(stubContext.octokit.graphql.mock.calls[0][1]).toEqual({ id: 'node-200' })
+      expect(stubContext.octokit.rest.issues.createComment).toHaveBeenCalledTimes(1)
+    })
+
+    it('only minimizes the last matching comment when several exist from repeat runs', async () => {
+      stubContext.octokit.paginate.mockResolvedValue([
+        { id: 1, node_id: 'node-1', body: '#### :robot: Safe-Settings config changes detected:\nfirst' },
+        { id: 2, node_id: 'node-2', body: '#### :robot: Safe-Settings config changes detected:\nsecond' }
+      ])
+      settings.results = [changeResult('test-repo')]
+
+      await settings.handleResults()
+
+      expect(stubContext.octokit.graphql).toHaveBeenCalledTimes(1)
+      expect(stubContext.octokit.graphql.mock.calls[0][1]).toEqual({ id: 'node-2' })
+    })
+
+    it('creates a comment without minimizing when existing comments do not match the heading', async () => {
+      stubContext.octokit.paginate.mockResolvedValue([
+        { id: 1, node_id: 'node-1', body: 'just a regular review comment' }
+      ])
+      settings.results = [changeResult('test-repo')]
+
+      await settings.handleResults()
+
+      expect(stubContext.octokit.graphql).not.toHaveBeenCalled()
+      expect(stubContext.octokit.rest.issues.createComment).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the checkbox and truncation marker when the diff is huge', async () => {
+      settings.results = Array.from({ length: 500 }, (_, i) => ({
+        type: 'INFO',
+        plugin: 'Repository',
+        repo: `test-repo-${i}`,
+        action: { additions: {}, deletions: {}, modifications: { name: `test-repo-${i}`, description: 'x'.repeat(200) } }
+      }))
+
+      await settings.handleResults()
+
+      const body = stubContext.octokit.rest.issues.createComment.mock.calls[0][0].body
+      expect(body).toContain('... (too many changes to report)')
+      expect(body).toContain('- [ ] I have reviewed the changes and verified that they are intended.')
+    })
+
+    it('sets conclusion to action_required when there are unverified changes', async () => {
+      settings.results = [changeResult('test-repo')]
+
+      await settings.handleResults()
+
+      expect(stubContext.octokit.rest.checks.update).toHaveBeenCalledWith(
+        expect.objectContaining({ conclusion: 'action_required' })
+      )
+    })
+
+    it('sets conclusion to success when there are no changes', async () => {
+      settings.results = [{
+        type: 'INFO', plugin: 'Repository', repo: 'test-repo', action: { additions: null, deletions: null, modifications: null }
+      }]
+
+      await settings.handleResults()
+
+      expect(stubContext.octokit.rest.checks.update).toHaveBeenCalledWith(
+        expect.objectContaining({ conclusion: 'success' })
+      )
+    })
+
+    it('sets conclusion to failure when there is an error, regardless of changes', async () => {
+      settings.results = [{
+        type: 'ERROR', plugin: 'Repository', repo: 'test-repo', action: { msg: 'boom', additions: null, deletions: null, modifications: null }
+      }]
+
+      await settings.handleResults()
+
+      expect(stubContext.octokit.rest.checks.update).toHaveBeenCalledWith(
+        expect.objectContaining({ conclusion: 'failure' })
+      )
+    })
+  })
 }) // Settings Tests
