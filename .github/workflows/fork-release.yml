@@ -1,6 +1,11 @@
 name: Fork release
 on:
   workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or SHA to release'
+        required: false
+        default: 'main-enterprise'
 
 permissions:
   contents: write
@@ -15,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main-enterprise
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
