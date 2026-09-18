@@ -612,6 +612,29 @@ module.exports = (robot, { getRouter }, Settings = require('./lib/settings')) =>
     await context.octokit.rest.checks.update(params)
   })
 
+  robot.on('issue_comment.edited', async context => {
+    const { payload } = context
+    const body = payload.comment.body || ''
+    if (!body.includes('#### :robot: Safe-Settings config changes detected:')) {
+      return
+    }
+    const match = body.match(/safe-settings-check-run-id:\s*(\d+)/)
+    if (!match) {
+      return
+    }
+    const checked = /-\s\[x\]\s*I have reviewed the changes/i.test(body)
+    const params = {
+      owner: payload.repository.owner.login,
+      repo: payload.repository.name,
+      check_run_id: Number(match[1]),
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+      conclusion: checked ? 'success' : 'action_required'
+    }
+    robot.log.debug(`Updating check run for comment verification ${JSON.stringify(params)}`)
+    await context.octokit.rest.checks.update(params)
+  })
+
   robot.on('repository.created', async context => {
     const { payload } = context
     const { sender } = payload
